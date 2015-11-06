@@ -9,18 +9,17 @@ import numpy as np
 import os
 import sys
 
-
 import librosa
 from scipy import signal
 import scipy.ndimage
 from scipy.misc import imsave
 
 ''' 2015-09-28 Keunwoo Choi
-- [0] load cnn weights that is learned from keras.
+- [0] load cnn weights that is learned from keras (http://keras.io).
 - [1] load a song file (STFT).
 ---[1-0] log_amplitude(abs(STFT))
--- [1-1] feed-forward the spectrogram
---- [1-1-0]using NOT theano, just scipy and numpy.
+-- [1-1] feed-forward the spectrogram,
+--- [1-1-0]using NOT theano, just scipy and numpy on CPU. Thus it's slow.
 -- [1-2] then 'deconve' using switch matrix for every convolutional layer.
 -- [1-3] 'separate' or 'auralise' the deconved spectrogram using phase information of original signal.
 - [2]listen up!
@@ -31,7 +30,9 @@ def do_nothing():
 	return 
 
 def get_deconve_mask(W, layer_names, SRC, depth):
-	''' return the mask for deconvolution.
+	''' 
+	This function returns the deconvolved mask.
+
 	W: weights. shape: (#conv_layers -by- #channels_out - #channels_in - #rows - #cols)
 	layer_names: array of layer names from keras
 	SRC: STFT representation 
@@ -42,13 +43,15 @@ def get_deconve_mask(W, layer_names, SRC, depth):
 		return np.maximum(0., x)
 
 	def get_deconvolve(images, weights):
-		''' input image is expected to be unpooled image, i.e. decimated with switch matrix. 
-		weights: 4-d array. (#channels_out - #channels_in - #rows - #cols) e.g. 64-64-3-3. when deconvolve, 'out' is 'in'!
+		''' input image is expected to be unpooled image, i.e. 'upsampled' with switch matrix. 
+		weights: 4-d array. (#channels_out - #channels_in - #rows - #cols) e.g. 64-64-3-3. 
+		         When deconvolve, 'out' is input of deconvolution and vice versa. 
+		         Check the names below: 'num_before_deconv' and 'num_after_deconv', which are self-explanatory 
 		'''
 		num_before_deconv, num_after_deconv, num_row, num_col = weights.shape
-		flipped_weights = weights[:, :, ::-1, ::-1]
+		flipped_weights = weights[:, :, ::-1, ::-1] # fliplr and flipud to use in deconvolution.
 		reversed_flipped_weights = np.zeros((num_after_deconv, num_before_deconv, num_row, num_col))
-		for dim0 in xrange(num_after_deconv):
+		for dim0 in xrange(num_after_deconv): # reverse the dimension to reuse get_convolve function.
 			for dim1 in xrange(num_before_deconv):
 				reversed_flipped_weights[dim0, dim1, :, :] = flipped_weights[dim1, dim0, :, :]
 		
@@ -61,10 +64,7 @@ def get_deconve_mask(W, layer_names, SRC, depth):
 		# out_images = np.zeros((num_image, num_row*ds, num_col*ds))
 		out_images = np.zeros((num_image, num_swt_row, num_swt_col))
 		for ind_image, image in enumerate(images):
-			try:
-				out_images[ind_image, :num_img_row*ds, :num_img_col*ds] = np.multiply(scipy.ndimage.zoom(image, ds, order=0), switches[ind_image, :num_img_row*ds, :num_img_col*ds]) # [1 ] becomes [1 1; 1 1], then multiplied.
-			except ValueError:
-				pdb.set_trace()
+			out_images[ind_image, :num_img_row*ds, :num_img_col*ds] = np.multiply(scipy.ndimage.zoom(image, ds, order=0), switches[ind_image, :num_img_row*ds, :num_img_col*ds]) # [1 ] becomes [1 1; 1 1], then multiplied.
 		return out_images
 
 	def get_convolve(images, weights):
@@ -137,12 +137,8 @@ def get_deconve_mask(W, layer_names, SRC, depth):
 
 		elif layer_name == "Flatten":
 			break
-			# size = 1
-			# for dim in MAG[layer_ind].shape:
-			# 	size = size * dim
-			# MAG.apend(np.reshape(MAG[layer_ind], (size, 1)))
 	
-	# [2] 'deconve' # numbers below come from vggnet5 model -- WHEN DEPTH IS 4 !!!!!!!!!!.
+	# [2] 'deconve' # numbers below come from vggnet5 model (when depth == 4).
 	revMAG = list(reversed(MAG)) # len(revMAG)==9, revMAG[i].shape = (64,16,10), (64,32,21), (64,32,21), (64,64,43), (64,128,86),(64,128,86),(64,257,173),(1,257,173)
 	revProc = list(reversed(procedures)) # len(revProc)==8, ['MP', 'conv', 'MP', 'conv', 'MP', 'conv', 'MP', 'conv']
 	revSwitch = list(reversed(switch_matrices)) # len(revSwitch)==4, revSwitch[0].shape = (64, 32, 21), (64, 64, 43), (64, 128, 86), (64, 257, 173)
@@ -185,12 +181,20 @@ def get_deconve_mask(W, layer_names, SRC, depth):
 
 		deconved_final_results[ind_out, :, :] = deconvMAG[-1][:,:,:]
 	
-	
 	return deconved_final_results
 
-
-
 if __name__ == "__main__":
+	'''
+	This is main body of program I used for the paper at ismir. 
+	You need a keras model weights file with music files at the appropriate folder... In other words, it won't be executed at your computer.
+	Just see the part after 
+		print '--- deconve! ---'
+	, where the deconvolution functions are used.
+
+	'''
+
+
+
 	model_name = "vggnet5"
 
 	keras_filename = "vggnet5_local_keras_model_CNN_stft_11_frame_173_freq_257_folding_0_best.keras"
