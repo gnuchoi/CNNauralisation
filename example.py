@@ -1,14 +1,10 @@
 #-*- coding: utf_8 -*-
 import matplotlib
-from setup_environments import *
-from constants import *
-from learning_audio import *
-from utils_plot import *
 import cPickle
 import numpy as np
 import os
 import sys
-
+import keras
 import librosa
 from scipy import signal
 import scipy.ndimage
@@ -25,6 +21,63 @@ from scipy.misc import imsave
 - [2]listen up!
 
 '''
+def buildConvNetModel(numFr, len_freq, learning_rate=0.0005, model_name = 'vggnet5', dropout_values=[0, 0, 0.25, 0, 0.25], optimiser=None):
+	from keras.models import Sequential
+	from keras.layers.core import Dense, Dropout, Activation, Flatten
+	from keras.layers.convolutional import Convolution2D, MaxPooling2D
+	from keras.layers.normalization import LRN2D
+	from keras.optimizers import RMSprop, SGD
+	''' Keras layer - input argumetns should be updated
+	'''
+
+	final_freq_num = len_freq
+	final_frame_num = numFr
+
+	model = Sequential()
+
+	if model_name == 'vggnet5':
+		image_patch_sizes = [[3,3],[3,3],[3,3],[3,3],[3,3]]
+		pool_sizes = [(2,2),(2,2),(2,2),(2,2),(2,2)]
+			
+		for i in xrange(len(image_patch_sizes)):
+			final_freq_num = final_freq_num / pool_sizes[i][0]
+			final_frame_num = final_frame_num / pool_sizes[i][1]
+		
+		num_stacks = [1, 48, 48, 48, 48, 48]
+		
+		for i in xrange(len(image_patch_sizes)):
+			model.add(Convolution2D(num_stacks[i+1], num_stacks[i], image_patch_sizes[i][0], image_patch_sizes[i][1], border_mode='same', activation='relu'))
+			model.add(MaxPooling2D(poolsize=pool_sizes[i]))
+
+			if dropout_values[i] is not 0:
+				model.add(Dropout(dropout_values[i]))
+
+			model.add(LRN2D())
+
+	print "final freq num:%d, final frame num:%d" % (final_freq_num, final_frame_num)
+
+	model.add(Flatten())
+	model.add(Dense(final_freq_num*final_frame_num*num_stacks[-1], 512, activation='relu'))
+	model.add(Dropout(0.5))
+	### [END OF METHOD 2]
+	'''end of method 2'''
+	model.add(Dense(512, 256, init='normal', activation='relu'))
+	model.add(Dropout(0.5))
+
+	# Decision layer
+	model.add(Dense(256, 3, init='normal')) #no activation. here I assumed 3-genre classification
+	model.add(Activation('softmax'))
+	if optimiser in [None, 'sgd']:
+		print ":::use sgd optimiser"
+		sgd = SGD(lr=learning_rate, decay=1e-6, momentum=0.9, nesterov=True)
+		model.compile(loss='categorical_crossentropy', optimizer=sgd)
+	else:
+		print ":::use rmsprop optimiser"
+		rmsprop = keras.optimizers.RMSprop(lr=learning_rate, rho=0.9, epsilon=1e-6)
+		model.compile(loss='categorical_crossentropy', optimizer=rmsprop)
+
+	return model
+
 
 def do_nothing():
 	return 
@@ -192,13 +245,8 @@ if __name__ == "__main__":
 	, where the deconvolution functions are used.
 
 	'''
-
-
-
 	model_name = "vggnet5"
-
 	keras_filename = "vggnet5_local_keras_model_CNN_stft_11_frame_173_freq_257_folding_0_best.keras"
-	#keras_filename = "medium_vggnet_keras_model_CNN_optm_rmsprop_stft_11_frame_173_freq_257_folding_0_best.keras"
 	
 	num_fr = 173
 	len_freq = 257
@@ -207,7 +255,7 @@ if __name__ == "__main__":
 	print '--- load model ---'
 	
 	model = buildConvNetModel(num_fr, len_freq, learning_rate, model_name, dropout_values, 'rmsprop')
-	model.load_weights(PATH_MODEL + keras_filename)
+	model.load_weights(keras_filename)
 	# understand the current model
 	W = []
 	layer_names = []
@@ -219,7 +267,6 @@ if __name__ == "__main__":
 			W.append(layer.W.get_value(borrow=True))
 
 		# W = layer.get_weights()[0] # tensor. same as layer.W.get_value(borrow=True)
-	
 	if isLocal:
 		path_src = "/Users/naver/Documents/keunwoo_src/"
 		path_SRC = "/Users/naver/Documents/keunwoo_src/"
@@ -227,10 +274,6 @@ if __name__ == "__main__":
 		path_src = "/data2/jwha/music/20150817_chosen_songs2/dump1/"
 		path_SRC = "/data2/keunwoo/SRC/"
 	
-	# W = np.zeros((2,2,2))
-	# W[0] = np.array(([[1,0], [1,0]]))
-	# W[1] = np.array(([[1,1], [0,0]]))
-
 	num_conv_layer = len(W)
 
 	# load files
