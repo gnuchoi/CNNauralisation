@@ -1,20 +1,34 @@
 # AuralisationCNN
 .
+
 .
+
 .
+
 .
+
 .
+
 .
+
 .
+
+
 *This repo is moved to https://github.com/keunwoochoi/Auralisation, no further change will be made here.
 .
+
 .
+
 .
+
 .
+
 .
+
 .
+
 .
-.
+
 ------
 
 
